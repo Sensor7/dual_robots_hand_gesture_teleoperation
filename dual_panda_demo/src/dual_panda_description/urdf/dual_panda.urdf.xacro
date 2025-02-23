@@ -1,0 +1,48 @@
+<?xml version="1.0" ?>
+<robot name="dual_panda" xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+    <link name="world" />
+    <xacro:include filename="$(find dual_panda_description)/urdf/panda.urdf.xacro"/>
+    <xacro:panda prefix="L_" />
+    <xacro:panda prefix="R_" />
+
+    <joint name="L_panda_link_joint0" type="fixed">
+        <origin
+        xyz="0 0.5 0"
+        rpy="0 0 0" />
+        <parent link="world" />
+        <child link="L_panda_link0" />
+    </joint>
+
+    <joint name="R_panda_link_joint0" type="fixed">
+        <origin
+        xyz="0 -0.5 0"
+        rpy="0 0 0" />
+        <parent link="world" />
+        <child link="R_panda_link0" />
+    </joint>
+
+
+    <link name="ground">
+        <visual>
+        <origin rpy="0 0 0" xyz="0 0 0"/>
+        <geometry>
+            <box size="4 4 0.05"/>
+        </geometry>
+        <material name="ground_color">
+            <color rgba="0.0 0.0 1.0 0.5"/>
+        </material>
+        </visual>
+        <collision>
+        <origin rpy="0 0 0" xyz="0 0 0"/>
+        <geometry>
+            <box size="5 5 0.05"/>
+        </geometry>
+        </collision>
+    </link>
+    <joint name="ground_joint" type="fixed">
+        <origin rpy="0 0 0" xyz="0 0 -0.025"/>
+        <parent link="world"/>
+        <child link="ground"/>
+    </joint>
+</robot>

@@ -1,0 +1,25 @@
+moveit_setup_assistant_config:
+  urdf:
+    package: dual_panda_description
+    relative_path: urdf/dual_panda.urdf.xacro
+  srdf:
+    relative_path: config/dual_panda.srdf
+  package_settings:
+    author_name: Guanqi Chen
+    author_email: guanqichen707@outlook.com
+    generated_timestamp: 1740325916
+  control_xacro:
+    command:
+      - position
+    state:
+      - position
+      - velocity
+  modified_urdf:
+    xacros:
+      - control_xacro
+  control_xacro:
+    command:
+      - position
+    state:
+      - position
+      - velocity

@@ -1,0 +1,44 @@
+robot: 
+  arm_name: left_arm  
+  ee_link_name: L_panda_hand
+  robot_desc: robot_description
+  move_group_ns: 
+  planning_scene: planning_scene
+  planning_frame: world
+  num_cart_pts: 20
+  joint_states: joint_states
+topic:
+  sub:
+    cmd_pose:
+      name: left_arm/cmd/pose
+      queue: 1
+    cmd_traj: 
+      name: left_arm/cmd/traj
+      queue: 1
+    cmd_tool_orientation:
+      name: left_tool/cmd/orient
+      queue: 1
+    cmd_delta_pose: 
+      name: left_arm/cmd/deta_pose
+      queue: 1
+    joint_states:
+      name: left_joint_states
+      queue: 1  
+  pub:
+    display_trajectory:
+      name: left_arm/display_path
+      queue: 1
+    current_pose:
+      name: left_arm/state/current_pose
+      queue: 1
+srv: 
+  disable_collision: 
+    name: /move_group/disable_collision
+  add_collision: 
+    name: /move_group/add_collision
+  change_robot_state: 
+    name: left_arm/change_state
+  open_gripper: 
+    name: left_arm/gripper/open
+  close_gripper: 
+    name: left_arm/gripper/close 
