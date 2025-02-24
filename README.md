@@ -3,16 +3,25 @@ dual_panda_demo ros2
 
 
 # prepare
-1. install
-```
-wget http://fishros.com/install -O fishros && . fishros
-install ros-humble-desktop
-install rosdepc
+1. install ros2 humble
 
-git clone https://github.com/wawatt/dual_panda_demo.git
-cd src
-sudo apt update && rosdepc install -r --from-paths . --ignore-src --rosdistro $ROS_DISTRO -y
+2. install moveit2 and ros2 control
+
+``` bash
+sudo apt install ros-humble-moveit*
 ```
+
+3. install mediapipe, torch and torch vision
+```bash
+pip install mediapipe
+pip install torch==2.5.1 torchvision==0.20.1 torchaudio==2.5.1 --index-url https://download.pytorch.org/whl/cu121
+pip install transformers
+```
+
+**if you don't have cuda gpu, remember to deactivate the DL monocular camera depth estimation module, otherwise it will run very slow**
+
+4. 
+
 
 
 # build and run
