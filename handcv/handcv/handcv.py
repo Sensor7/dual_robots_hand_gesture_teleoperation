@@ -34,7 +34,17 @@ from .mediapipehelper import MediaPipeRos as mps
 import mediapipe as mp
 import numpy as np
 import cv2 as cv
+import torch
+from transformers import AutoImageProcessor, AutoModelForDepthEstimation
 
+
+# Initialize the Depth Anything model
+model_name = "Intel/dpt-hybrid-midas"
+processor = AutoImageProcessor.from_pretrained(model_name)
+model = AutoModelForDepthEstimation.from_pretrained(model_name)
+# Move model to GPU if available
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+model.to(device)
 
 class HandCV(Node):
     def __init__(self):
@@ -58,14 +68,14 @@ class HandCV(Node):
         self.color_image_raw_sub = self.create_subscription(
             Image, '/image_raw', self.color_image_raw_callback, 10)
 
-        self.depth_image_raw_sub = self.create_subscription(
-            Image, '/camera/aligned_depth_to_color/image_raw', self.depth_image_raw_callback, 10)
-
         # create publishers
         self.cv_image_pub = self.create_publisher(Image, 'cv_image', 10)
 
-        self.waypoint_pub = self.create_publisher(
-                PoseStamped, 'waypoint', 10)
+        self.right_waypoint_pub = self.create_publisher(
+                PoseStamped, 'right_waypoint', 10)
+
+        self.left_waypoint_pub = self.create_publisher(
+                PoseStamped, 'left_waypoint', 10)
 
         self.right_gesture_pub = self.create_publisher(
                 String, 'right_gesture', 10)
@@ -76,24 +86,43 @@ class HandCV(Node):
         # intialize other variables
         self.color_image = None
         self.depth_image = None
-        self.waypoint = PoseStamped() 
-        self.waypoint.pose.orientation.x = 1.0
-        self.waypoint.pose.orientation.w = 0.0
+        self.left_waypoint = PoseStamped() 
+        self.left_waypoint.pose.orientation.x = 1.0
+        self.left_waypoint.pose.orientation.w = 0.0
+        self.right_waypoint = PoseStamped() 
+        self.right_waypoint.pose.orientation.x = 1.0
+        self.right_waypoint.pose.orientation.w = 0.0
         self.image_width = 0
         self.image_height = 0
-        self.centroid = np.array([0.0, 0.0, 0.0])
+        self.left_centroid = np.array([0.0, 0.0, 0.0])
+        self.right_centroid = np.array([0.0, 0.0, 0.0])
+        self.use_gpu = True
 
-    def depth_image_raw_callback(self, msg):
-        """Capture depth images and convert them to OpenCV images."""
-        self.depth_image = self.bridge.imgmsg_to_cv2(
-            msg, desired_encoding="passthrough")
-        self.depth_image = cv.flip(self.depth_image, 1)
+    def depth_image_from_color_image(self):
+        inputs = processor(images=self.color_image, return_tensors="pt").to(device)
+
+        # Perform inference
+        with torch.no_grad():
+            outputs = model(**inputs)
+            predicted_depth = outputs.predicted_depth
+        
+        depth_map = torch.nn.functional.interpolate(
+            predicted_depth.unsqueeze(1),
+            size=self.color_image.shape[:2],
+            mode="bicubic",
+            align_corners=False,
+        ).squeeze().cpu().numpy()
+        center_x, center_y = depth_map.shape[1] // 2, depth_map.shape[0] // 2
+        center_depth = depth_map[center_y, center_x]
+        return depth_map
+
 
     def color_image_raw_callback(self, msg):
         """Cpature color images and convert them to OpenCV images."""
         self.color_image = self.bridge.imgmsg_to_cv2(
             msg, desired_encoding="passthrough")
         self.color_image = cv.flip(self.color_image, 1)
+        self.depth_image = self.depth_image_from_color_image()
         self.image_width = msg.width
         self.image_height = msg.height
 
@@ -142,7 +171,7 @@ class HandCV(Node):
 
         if detection_result.hand_landmarks and right_index is not None:
             # self.get_logger().info("Right Hand")
-            coords = np.array([[landmark.x * np.shape(annotated_image)[1],
+            right_coords = np.array([[landmark.x * np.shape(annotated_image)[1],
                                 landmark.y * np.shape(annotated_image)[0]]
                                for landmark in [detection_result.hand_landmarks[right_index][0],
                                                 detection_result.hand_landmarks[right_index][1],
@@ -151,28 +180,59 @@ class HandCV(Node):
                                                 detection_result.hand_landmarks[right_index][9],
                                                 detection_result.hand_landmarks[right_index][14],
                                                 detection_result.hand_landmarks[right_index][17]]])
+            left_coords = np.array([[landmark.x * np.shape(annotated_image)[1],
+                                landmark.y * np.shape(annotated_image)[0]]
+                               for landmark in [detection_result.hand_landmarks[left_index][0],
+                                                detection_result.hand_landmarks[left_index][1],
+                                                detection_result.hand_landmarks[left_index][2],
+                                                detection_result.hand_landmarks[left_index][5],
+                                                detection_result.hand_landmarks[left_index][9],
+                                                detection_result.hand_landmarks[left_index][14],
+                                                detection_result.hand_landmarks[left_index][17]]])
         # now perform the math on the numpy arrays. I think this is faster?
-            length = coords.shape[0]
-            sum_x = np.sum(coords[:, 0])
-            sum_y = np.sum(coords[:, 1])
-            self.centroid = np.array([sum_x/length, sum_y/length, 0.0])
+            length = right_coords.shape[0]
+            sum_x = np.sum(right_coords[:, 0])
+            sum_y = np.sum(right_coords[:, 1])
+            self.right_centroid = np.array([sum_x/length, sum_y/length, 0.0])
 
-        # self.centroid[2] = self.depth_image[int(self.centroid[1]), int(self.centroid[0])]
-        self.centroid[2] = 0.5
+            length = left_coords.shape[0]
+            sum_x = np.sum(left_coords[:, 0])
+            sum_y = np.sum(left_coords[:, 1])
+            self.left_centroid = np.array([sum_x/length, sum_y/length, 0.0])
 
-        self.waypoint.pose.position.x = self.centroid[0]
-        self.waypoint.pose.position.y = self.centroid[1]
-        self.waypoint.pose.position.z = self.centroid[2]
+        if self.use_gpu:
+            self.right_centroid[2] = self.depth_image[int(self.right_centroid[1]), int(self.right_centroid[0])]
+            self.left_centroid[2] = self.depth_image[int(self.left_centroid[1]), int(self.left_centroid[0])]
+        else:
+            self.right_centroid[2] = 0.5
+            self.left_centroid[2] = 0.5
 
-        text = f"(x: {np.round(self.centroid[0] - self.image_width/2)}, y: {np.round(self.centroid[1] - self.image_height/2)}, z: {np.round(self.centroid[2])})"
+        self.right_waypoint.pose.position.x = self.right_centroid[0]
+        self.right_waypoint.pose.position.y = self.right_centroid[1]
+        self.right_waypoint.pose.position.z = self.right_centroid[2]
 
-        annotated_image = cv.putText(annotated_image, text,
-                                     (int(self.centroid[0])-100,
-                                      int(self.centroid[1])+40),
+        self.left_waypoint.pose.position.x = self.left_centroid[0]
+        self.left_waypoint.pose.position.y = self.left_centroid[1]
+        self.left_waypoint.pose.position.z = self.left_centroid[2]
+
+        right_text = f"(x: {np.round(self.right_centroid[0] - self.image_width/2)}, y: {np.round(self.right_centroid[1] - self.image_height/2)}, z: {np.round(self.right_centroid[2])})"
+        left_text = f"(x: {np.round(self.left_centroid[0] - self.image_width/2)}, y: {np.round(self.left_centroid[1] - self.image_height/2)}, z: {np.round(self.left_centroid[2])})"
+
+        annotated_image = cv.putText(annotated_image, right_text,
+                                     (int(self.right_centroid[0])-100,
+                                      int(self.right_centroid[1])+40),
+                                     cv.FONT_HERSHEY_COMPLEX, 0.5, (255, 255, 255), 1)
+        
+        annotated_image = cv.putText(annotated_image, left_text,
+                                     (int(self.left_centroid[0])-100,
+                                      int(self.left_centroid[1])+40),
                                      cv.FONT_HERSHEY_COMPLEX, 0.5, (255, 255, 255), 1)
 
         annotated_image = cv.circle(
-            annotated_image, (int(self.centroid[0]), int(self.centroid[1])), 10, (255, 255, 255), -1)
+            annotated_image, (int(self.right_centroid[0]), int(self.right_centroid[1])), 10, (255, 255, 255), -1)
+
+        annotated_image = cv.circle(
+            annotated_image, (int(self.left_centroid[0]), int(self.left_centroid[1])), 10, (255, 255, 255), -1)
 
         cv_image = self.bridge.cv2_to_imgmsg(
             annotated_image, encoding="rgb8")
@@ -208,8 +268,11 @@ class HandCV(Node):
 
         
         # publish the waypoint
-        self.waypoint.header.stamp = self.get_clock().now().to_msg()
-        self.waypoint_pub.publish(self.waypoint)
+        self.right_waypoint.header.stamp = self.get_clock().now().to_msg()
+        self.right_waypoint_pub.publish(self.right_waypoint)
+
+        self.left_waypoint.header.stamp = self.get_clock().now().to_msg()
+        self.left_waypoint_pub.publish(self.left_waypoint)
 
 
 def main(args=None):
