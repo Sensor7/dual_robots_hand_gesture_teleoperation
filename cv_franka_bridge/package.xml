@@ -1,0 +1,27 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>cv_franka_bridge</name>
+  <version>0.0.0</version>
+  <description>A package to teleoperate a franka robot using computer vision</description>
+  <maintainer email="gclifford@u.northwestern.edu">Graham Clifford</maintainer>
+  <license>APLv2</license>
+
+  <depend>hand_interfaces</depend>
+  <depend>visualization_msgs</depend>
+  <depend>franka_msgs</depend>
+  <depend>tf2_ros</depend>
+  <depend>tf2_geometry_msgs</depend>
+  <depend>std_srvs</depend>
+  <depend>std_msgs</depend>
+
+  <test_depend>ament_copyright</test_depend>
+  <test_depend>ament_flake8</test_depend>
+  <test_depend>ament_pep257</test_depend>
+  <test_depend>python3-pytest</test_depend>
+  <exec_depend>franka_teleop</exec_depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

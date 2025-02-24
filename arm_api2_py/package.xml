@@ -4,7 +4,7 @@
   <name>arm_api2_py</name>
   <version>1.0.0</version>
   <description>TODO: Package description</description>
-  <maintainer email="edgar.welte@kit.edu">edgar</maintainer>
+  <maintainer email="guanqi.chen@student.kit.edu">guanqi</maintainer>
   <license>TODO: License declaration</license>
 
   <depend>rclpy</depend>
