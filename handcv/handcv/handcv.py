@@ -31,6 +31,7 @@ from hand_interfaces.msg import FingerData
 from cv_bridge import CvBridge, CvBridgeError
 from .mediapipehelper import MediaPipeRos as mps
 
+import PIL.Image as PILImage
 import mediapipe as mp
 import numpy as np
 import cv2 as cv
@@ -98,8 +99,8 @@ class HandCV(Node):
         self.right_centroid = np.array([0.0, 0.0, 0.0])
         self.use_gpu = True
 
-    def depth_image_from_color_image(self):
-        inputs = processor(images=self.color_image, return_tensors="pt").to(device)
+    def depth_image_from_color_image(self, color_image):
+        inputs = processor(images=color_image, return_tensors="pt").to(device)
 
         # Perform inference
         with torch.no_grad():
@@ -108,21 +109,27 @@ class HandCV(Node):
         
         depth_map = torch.nn.functional.interpolate(
             predicted_depth.unsqueeze(1),
-            size=self.color_image.shape[:2],
+            size=color_image.shape[:2],
             mode="bicubic",
             align_corners=False,
         ).squeeze().cpu().numpy()
-        center_x, center_y = depth_map.shape[1] // 2, depth_map.shape[0] // 2
-        center_depth = depth_map[center_y, center_x]
+        depth_map = (depth_map - depth_map.min()) / (depth_map.max() - depth_map.min())
+        depth_map = (depth_map * 255).astype(np.uint8)
         return depth_map
 
 
     def color_image_raw_callback(self, msg):
         """Cpature color images and convert them to OpenCV images."""
         self.color_image = self.bridge.imgmsg_to_cv2(
-            msg, desired_encoding="passthrough")
-        self.color_image = cv.flip(self.color_image, 1)
-        self.depth_image = self.depth_image_from_color_image()
+            msg, desired_encoding="rgb8")
+        # self.color_image = cv.flip(self.color_image, 1)
+        color_image = self.color_image.copy()
+        if PILImage.fromarray(color_image).mode != 'RGB':
+            color_image = np.array(PILImage.fromarray(color_image).convert('RGB'))
+        if self.use_gpu:
+            self.depth_image = self.depth_image_from_color_image(color_image)
+        else:
+            self.depth_image = np.zeros_like(self.color_image)
         self.image_width = msg.width
         self.image_height = msg.height
 
@@ -180,6 +187,18 @@ class HandCV(Node):
                                                 detection_result.hand_landmarks[right_index][9],
                                                 detection_result.hand_landmarks[right_index][14],
                                                 detection_result.hand_landmarks[right_index][17]]])
+        # now perform the math on the numpy arrays. I think this is faster?
+            length = right_coords.shape[0]
+            sum_x = np.sum(right_coords[:, 0])
+            sum_y = np.sum(right_coords[:, 1])
+            self.right_centroid = np.array([sum_x/length, sum_y/length, 0.0])
+
+            if self.use_gpu:
+                self.right_centroid[2] = self.depth_image[int(self.right_centroid[1]), int(self.right_centroid[0])]
+            else:
+                self.right_centroid[2] = 0.5
+
+        if detection_result.hand_landmarks and left_index is not None:
             left_coords = np.array([[landmark.x * np.shape(annotated_image)[1],
                                 landmark.y * np.shape(annotated_image)[0]]
                                for landmark in [detection_result.hand_landmarks[left_index][0],
@@ -189,23 +208,15 @@ class HandCV(Node):
                                                 detection_result.hand_landmarks[left_index][9],
                                                 detection_result.hand_landmarks[left_index][14],
                                                 detection_result.hand_landmarks[left_index][17]]])
-        # now perform the math on the numpy arrays. I think this is faster?
-            length = right_coords.shape[0]
-            sum_x = np.sum(right_coords[:, 0])
-            sum_y = np.sum(right_coords[:, 1])
-            self.right_centroid = np.array([sum_x/length, sum_y/length, 0.0])
-
             length = left_coords.shape[0]
             sum_x = np.sum(left_coords[:, 0])
             sum_y = np.sum(left_coords[:, 1])
             self.left_centroid = np.array([sum_x/length, sum_y/length, 0.0])
 
-        if self.use_gpu:
-            self.right_centroid[2] = self.depth_image[int(self.right_centroid[1]), int(self.right_centroid[0])]
-            self.left_centroid[2] = self.depth_image[int(self.left_centroid[1]), int(self.left_centroid[0])]
-        else:
-            self.right_centroid[2] = 0.5
-            self.left_centroid[2] = 0.5
+            if self.use_gpu:
+                self.left_centroid[2] = self.depth_image[int(self.left_centroid[1]), int(self.left_centroid[0])]
+            else:
+                self.left_centroid[2] = 0.5
 
         self.right_waypoint.pose.position.x = self.right_centroid[0]
         self.right_waypoint.pose.position.y = self.right_centroid[1]
@@ -242,7 +253,6 @@ class HandCV(Node):
     def process_color_image(self):
         """Process the color image to find the 3D location of the hand's pose."""
         try:
-
             mp_image = mp.Image(
                 image_format=mp.ImageFormat.SRGB, data=self.color_image)
 
