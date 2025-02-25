@@ -59,7 +59,6 @@ class HandCV(Node):
 
         # create callback groups
         self.timer_callback_group = MutuallyExclusiveCallbackGroup()
-        self.waypoint_callback_group = MutuallyExclusiveCallbackGroup()
 
         # create timer
         self.timer = self.create_timer(

@@ -21,24 +21,24 @@ from std_srvs.srv import SetBool
 
 class ArmApi2Client:
 
-    def __init__(self, node: Node):
+    def __init__(self, node: Node, prefix: str = None):
         self._action_client_cartesian = ActionClient(
-            node, MoveCartesian, "arm/move_to_pose")
+            node, MoveCartesian, f"{prefix}arm/move_to_pose")
         self._action_client_joint = ActionClient(
-            node, MoveJoint, "arm/move_to_joint")
+            node, MoveJoint, f"{prefix}arm/move_to_joint")
         self._action_client_cartesian_path = ActionClient(
-            node, MoveCartesianPath, "arm/move_to_pose_path")
+            node, MoveCartesianPath, f"{prefix}arm/move_to_pose_path")
         self._action_client_gripper = ActionClient(
-            node, GripperCommand, "arm/gripper_control")
+            node, GripperCommand, f"{prefix}arm/gripper_control")
 
         self._service_client_state_change = node.create_client(
-            ChangeState, "arm/change_state")
+            ChangeState, f"{prefix}arm/change_state")
         self._service_client_setvelacc = node.create_client(
-            SetVelAcc, "arm/set_vel_acc")
+            SetVelAcc, f"{prefix}arm/set_vel_acc")
         self._service_client_seteelink = node.create_client(
-            SetStringParam, "arm/set_eelink")
+            SetStringParam, f"{prefix}arm/set_eelink")
         self._service_client_setplanonly = node.create_client(
-            SetBool, "arm/set_planonly")
+            SetBool, f"{prefix}arm/set_planonly")
         self._service_client_switch_controller = node.create_client(
             SwitchController, "controller_manager/switch_controller")
         self._service_client_list_controllers = node.create_client(
@@ -50,7 +50,7 @@ class ArmApi2Client:
             JointJog, "/moveit2_iface_node/delta_joint_cmds", 10)
 
         self._subscriber_current_ee_pose = node.create_subscription(
-            PoseStamped, "/arm/state/current_pose", self.current_pose_callback, 1)
+            PoseStamped, f"{prefix}arm/state/current_pose", self.current_pose_callback, 1)
 
         self.logger = node.get_logger()
         self._node = node

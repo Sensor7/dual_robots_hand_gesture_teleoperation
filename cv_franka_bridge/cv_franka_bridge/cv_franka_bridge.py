@@ -21,7 +21,6 @@ ACTION CLIENTS:
 
 """
 from geometry_msgs.msg import Pose, PoseStamped, Point, Quaternion
-from franka_teleop.srv import PlanPath
 
 from visualization_msgs.msg import Marker
 
@@ -30,11 +29,11 @@ from std_msgs.msg import String
 
 from tf2_ros.buffer import Buffer
 from tf2_ros.transform_listener import TransformListener
-from tf2_geometry_msgs import PoseStamped
+from tf2_geometry_msgs import PoseStamped, TwistStamped
+from sensor_msgs.msg import JointState
+from arm_api2_py.arm_api2_client import ArmApi2Client
 import tf2_ros
 from tf_transformations import quaternion_from_euler, euler_from_quaternion
-
-from franka_msgs.action import Homing, Grasp
 
 import rclpy
 from rclpy.node import Node
@@ -62,8 +61,13 @@ class CvFrankaBridge(Node):
         self.waypoint_callback_group = MutuallyExclusiveCallbackGroup()
         self.gesture_callback_group = MutuallyExclusiveCallbackGroup()
 
+        # arm api2 wrapper for both arms
+        self.left_arm_api2_client = ArmApi2Client(self, "left_")
+        self.right_arm_api2_client = ArmApi2Client(self, "right_")
+
         # create subscribers
-        self.waypoint_subscriber = self.create_subscription(PoseStamped, 'waypoint', self.waypoint_callback, 10, callback_group=self.waypoint_callback_group)
+        # self.left_waypoint_subscriber = self.create_subscription(PoseStamped, 'left_waypoint', self.left_waypoint_callback, 10, callback_group=self.waypoint_callback_group)
+        # self.right_waypoint_subscriber = self.create_subscription(PoseStamped, 'right_waypoint', self.right_waypoint_callback, 10, callback_group=self.waypoint_callback_group)
         # self.left_gesture_subscriber = self.create_subscription(String, 'left_gesture', self.left_gesture_callback, 10, callback_group=self.gesture_callback_group)
         self.right_gesture_subscriber = self.create_subscription(String, 'right_gesture', self.right_gesture_callback, 10, callback_group=self.gesture_callback_group)
 
@@ -72,24 +76,24 @@ class CvFrankaBridge(Node):
         self.bounding_box_publisher = self.create_publisher(Marker, 'bounding_box', 10)
 
         # create clients
-        self.waypoint_client = self.create_client(PlanPath, 'robot_waypoints')
-        self.waypoint_client.wait_for_service(timeout_sec=2.0)
+        # self.waypoint_client = self.create_client(PlanPath, 'robot_waypoints')
+        # self.waypoint_client.wait_for_service(timeout_sec=2.0)
 
         # create timer
         self.timer = self.create_timer(0.04, self.timer_callback)
 
-        # create action clients
-        self.gripper_homing_client = ActionClient(
-                self, Homing, 'panda_gripper/homing')
-        self.gripper_grasping_client = ActionClient(
-                self, Grasp, 'panda_gripper/grasp')
+        # # create action clients
+        # self.gripper_homing_client = ActionClient(
+        #         self, Homing, 'panda_gripper/homing')
+        # self.gripper_grasping_client = ActionClient(
+        #         self, Grasp, 'panda_gripper/grasp')
 
-        self.gripper_grasping_client.wait_for_server(timeout_sec=1.0)
-        # with a fake gripper, the homing server will not be created
-        if not self.gripper_homing_client.wait_for_server(
-                timeout_sec=1):
-            self.gripper_ready = False
-            self.gripper_homed = True
+        # self.gripper_grasping_client.wait_for_server(timeout_sec=1.0)
+        # # with a fake gripper, the homing server will not be created
+        # if not self.gripper_homing_client.wait_for_server(
+        #         timeout_sec=1):
+        #     self.gripper_ready = False
+        #     self.gripper_homed = True
 
         # create tf buffer and listener
         self.buffer = Buffer()
@@ -189,11 +193,11 @@ class CvFrankaBridge(Node):
         marker.color.b = 1.0
         return marker
 
-    def gripper_homing_callback(self, request, response):
-        """Callback for the gripper homing service."""
-        goal = Homing.Goal()
-        self.gripper_homing_client.send_goal_async(goal, feedback_callback=self.feedback_callback)
-        return response
+    # def gripper_homing_callback(self, request, response):
+    #     """Callback for the gripper homing service."""
+    #     goal = Homing.Goal()
+    #     self.gripper_homing_client.send_goal_async(goal, feedback_callback=self.feedback_callback)
+    #     return response
 
     def get_transform(self, target_frame, source_frame):
         """Get the transform between two frames."""
@@ -216,9 +220,9 @@ class CvFrankaBridge(Node):
             self.get_logger().info(f"Extrapolation exception: {e}")
             return [0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 0.0]
 
-    def get_ee_pose(self):
+    def get_ee_pose(self, prefix= None):
         """Get the current pose of the end-effector."""
-        ee_home_pos, ee_home_rot = self.get_transform("panda_link0", "panda_hand_tcp")
+        ee_home_pos, ee_home_rot = self.get_transform(f"{prefix}panda_link0", f"{prefix}panda_hand")
         ee_pose = Pose()
         ee_pose.position.x = ee_home_pos.x
         ee_pose.position.y = ee_home_pos.y
@@ -272,37 +276,37 @@ class CvFrankaBridge(Node):
             self.text_marker = self.create_text_marker(msg.data)
             self.move_robot = False
 
-        elif msg.data == "Closed_Fist" and self.gripper_ready and self.gripper_status == "Open":
-            # if closed fist, close the gripper
-            self.text_marker = self.create_text_marker(msg.data)
-            self.gripper_ready = False
-            self.gripper_status = "Closed"
-            self.gripper_force_control = False
-            self.gripper_force = 0.001
-            grasp_goal = Grasp.Goal()
-            grasp_goal.width = 0.01
-            grasp_goal.speed = 0.1
-            grasp_goal.epsilon.inner = 0.05
-            grasp_goal.epsilon.outer = 0.05
-            grasp_goal.force = self.gripper_force
-            future = self.gripper_grasping_client.send_goal_async(grasp_goal, feedback_callback=self.feedback_callback)
-            future.add_done_callback(self.grasp_response_callback)
+        # elif msg.data == "Closed_Fist" and self.gripper_ready and self.gripper_status == "Open":
+        #     # if closed fist, close the gripper
+        #     self.text_marker = self.create_text_marker(msg.data)
+        #     self.gripper_ready = False
+        #     self.gripper_status = "Closed"
+        #     self.gripper_force_control = False
+        #     self.gripper_force = 0.001
+        #     grasp_goal = Grasp.Goal()
+        #     grasp_goal.width = 0.01
+        #     grasp_goal.speed = 0.1
+        #     grasp_goal.epsilon.inner = 0.05
+        #     grasp_goal.epsilon.outer = 0.05
+        #     grasp_goal.force = self.gripper_force
+        #     future = self.gripper_grasping_client.send_goal_async(grasp_goal, feedback_callback=self.feedback_callback)
+        #     future.add_done_callback(self.grasp_response_callback)
 
-        elif msg.data == "Open_Palm" and self.gripper_ready and self.gripper_status == "Closed":
-            # if open palm, open the gripper
-            self.text_marker = self.create_text_marker(msg.data)
-            self.gripper_force = 3.0
-            grasp_goal = Grasp.Goal()
-            grasp_goal.width = 0.075
-            grasp_goal.speed = 0.2
-            grasp_goal.epsilon.inner = 0.001
-            grasp_goal.epsilon.outer = 0.001
-            grasp_goal.force = self.gripper_force
-            future = self.gripper_grasping_client.send_goal_async(grasp_goal, feedback_callback=self.feedback_callback)
-            future.add_done_callback(self.grasp_response_callback)
-            self.gripper_ready = False
-            self.gripper_status = "Open"
-            self.gripper_force_control = False
+        # elif msg.data == "Open_Palm" and self.gripper_ready and self.gripper_status == "Closed":
+        #     # if open palm, open the gripper
+        #     self.text_marker = self.create_text_marker(msg.data)
+        #     self.gripper_force = 3.0
+        #     grasp_goal = Grasp.Goal()
+        #     grasp_goal.width = 0.075
+        #     grasp_goal.speed = 0.2
+        #     grasp_goal.epsilon.inner = 0.001
+        #     grasp_goal.epsilon.outer = 0.001
+        #     grasp_goal.force = self.gripper_force
+        #     future = self.gripper_grasping_client.send_goal_async(grasp_goal, feedback_callback=self.feedback_callback)
+        #     future.add_done_callback(self.grasp_response_callback)
+        #     self.gripper_ready = False
+        #     self.gripper_status = "Open"
+        #     self.gripper_force_control = False
 
         if msg.data != "Thumb_Up" and msg.data != "Thumb_Down":
             self.count = 0
@@ -343,11 +347,11 @@ class CvFrankaBridge(Node):
 
         self.get_logger().info(f"Feedback: {feedback}")
 
-    async def home_gripper(self):
-        """Home the gripper."""
+    # async def home_gripper(self):
+    #     """Home the gripper."""
 
-        await self.gripper_homing_client.send_goal_async(Homing.Goal(), feedback_callback=self.feedback_callback)
-        self.gripper_homed = True
+    #     await self.gripper_homing_client.send_goal_async(Homing.Goal(), feedback_callback=self.feedback_callback)
+    #     self.gripper_homed = True
 
     async def timer_callback(self):
         """Callback for the timer."""
@@ -433,10 +437,11 @@ class CvFrankaBridge(Node):
         #     robot_move.pose.position.z = robot_move_z/robot_move_norm * output
         #     self.get_logger().info(f"linear move: {np.linalg.norm(np.array([robot_move.pose.position.x, robot_move.pose.position.y, robot_move.pose.position.z]) - np.array([0.0, 0.0, 0.0]))}")
 
-        planpath_request = PlanPath.Request()
-        planpath_request.waypoint = robot_move
-        planpath_request.angles = euler_output
-        future = self.waypoint_client.call_async(planpath_request)
+        # planpath_request = PlanPath.Request()
+        # planpath_request.waypoint = robot_move
+        # planpath_request.angles = euler_output
+        # future = self.waypoint_client.call_async(planpath_request)
+        
         # else:
         #     # even if the robot is not tracking the hand, we need to enforce
         #     # that it stays in the same place
