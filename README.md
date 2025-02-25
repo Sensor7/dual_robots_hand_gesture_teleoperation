@@ -9,6 +9,7 @@ dual_panda_demo ros2
 
 ``` bash
 sudo apt install ros-humble-moveit*
+sudo apt install ros-humble-tf-transformations
 ```
 
 3. install mediapipe, torch and torch vision
@@ -16,6 +17,8 @@ sudo apt install ros-humble-moveit*
 pip install mediapipe
 pip install torch==2.5.1 torchvision==0.20.1 torchaudio==2.5.1 --index-url https://download.pytorch.org/whl/cu121
 pip install transformers
+pip install --upgrade transforms3d
+
 ```
 
 **if you don't have cuda gpu, remember to deactivate the DL monocular camera depth estimation module, otherwise it will run very slow**
