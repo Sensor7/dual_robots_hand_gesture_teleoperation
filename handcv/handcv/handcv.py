@@ -96,7 +96,7 @@ class HandCV(Node):
         self.image_height = 0
         self.left_centroid = np.array([0.0, 0.0, 0.0])
         self.right_centroid = np.array([0.0, 0.0, 0.0])
-        self.use_gpu = True
+        self.use_gpu = False
 
     def depth_image_from_color_image(self, color_image):
         inputs = processor(images=color_image, return_tensors="pt").to(device)
@@ -195,7 +195,7 @@ class HandCV(Node):
             if self.use_gpu:
                 self.right_centroid[2] = self.depth_image[int(self.right_centroid[1]), int(self.right_centroid[0])]
             else:
-                self.right_centroid[2] = 0.5
+                self.right_centroid[2] = 500
 
         if detection_result.hand_landmarks and left_index is not None:
             left_coords = np.array([[landmark.x * np.shape(annotated_image)[1],
