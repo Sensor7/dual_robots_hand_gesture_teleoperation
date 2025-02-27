@@ -7,6 +7,9 @@ robot:
   planning_frame: world
   num_cart_pts: 20
   joint_states: joint_states
+  max_vel_scaling_factor: 0.1
+  max_acc_scaling_factor: 0.1
+  with_planner: true
 topic:
   sub:
     cmd_pose:
@@ -31,6 +34,9 @@ topic:
     current_pose:
       name: left_arm/state/current_pose
       queue: 1
+    current_robot_state:
+      name: left_arm/state/current_state
+      queue: 1
 srv: 
   disable_collision: 
     name: /move_group/disable_collision
@@ -38,7 +44,20 @@ srv:
     name: /move_group/add_collision
   change_robot_state: 
     name: left_arm/change_state
-  open_gripper: 
-    name: left_arm/gripper/open
-  close_gripper: 
-    name: left_arm/gripper/close 
+  set_vel_acc:
+    name: left_arm/set_vel_acc
+  set_eelink:
+    name: left_arm/set_eelink
+  set_planonly:
+    name: left_arm/set_planonly
+
+action:
+  move_to_pose:
+    name: left_arm/move_to_pose
+  move_to_joint:
+    name: left_arm/move_to_joint
+  move_to_pose_path:
+    name: left_arm/move_to_pose_path
+  gripper_control:
+    name: left_arm/gripper_control
+  
