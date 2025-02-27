@@ -13,7 +13,6 @@ moveit_simple_controller_manager:
     - right_hand_controller
     - left_arm_controller
     - right_arm_controller
-    - both_arm_controller
 
   left_hand_controller:
     type: GripperCommand
@@ -51,22 +50,3 @@ moveit_simple_controller_manager:
       - R_panda_joint7
     action_ns: follow_joint_trajectory
     default: true
-  both_arm_controller:
-    type: FollowJointTrajectory
-    joints:
-      - L_panda_joint1
-      - L_panda_joint2
-      - L_panda_joint3
-      - L_panda_joint4
-      - L_panda_joint5
-      - L_panda_joint6
-      - L_panda_joint7
-      - R_panda_joint1
-      - R_panda_joint2
-      - R_panda_joint3
-      - R_panda_joint4
-      - R_panda_joint5
-      - R_panda_joint6
-      - R_panda_joint7
-    action_ns: follow_joint_trajectory
-    default: trues

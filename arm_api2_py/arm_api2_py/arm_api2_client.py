@@ -197,6 +197,7 @@ class ArmApi2Client:
         self.logger.info(
             " ArmApi2Client: change_state request sent, waiting for response...")
 
+        import pdb; pdb.set_trace()
         response = self._service_client_state_change.call(request)
 
         if response.success:
@@ -230,9 +231,9 @@ class ArmApi2Client:
         Returns:
             bool: True if the service server response was received, False otherwise.
         """
-        res1 = self.switch_controller_for_joint_cartesian_ctl()
+        # res1 = self.switch_controller_for_joint_cartesian_ctl()
         res2 = self.change_state_to("CART_TRAJ_CTL")
-        return res1 and res2
+        return res2
 
     def change_state_to_servo_ctl(self):
         """

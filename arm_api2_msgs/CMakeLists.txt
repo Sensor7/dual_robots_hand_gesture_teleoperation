@@ -19,6 +19,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "srv/ChangeState.srv"
   "srv/SetStringParam.srv"
   "srv/SetVelAcc.srv"
+  "srv/PlanPath.srv"
   "msg/CartesianWaypoints.msg"
   "action/GripperControl.action"
   "action/MoveCartesian.action"

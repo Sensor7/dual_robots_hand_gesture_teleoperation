@@ -16,7 +16,7 @@ class ArmApi2ClientExample(Node):
     def __init__(self):
         super().__init__('my_node')
         self.get_logger().info('MyNode has been started')
-        self.arm_api2_client = ArmApi2Client(self)
+        self.arm_api2_client = ArmApi2Client(self, prefix="left_")
 
         # start the user input thread
         self.user_input_thread = threading.Thread(target=self.user_input)  
