@@ -24,7 +24,7 @@ from geometry_msgs.msg import Pose, PoseStamped, Point, Quaternion, TwistStamped
 
 from visualization_msgs.msg import Marker
 
-from std_srvs.srv import Empty
+from std_srvs.srv import Empty, Trigger
 from std_msgs.msg import String
 
 from tf2_ros.buffer import Buffer
@@ -86,6 +86,17 @@ class CvFrankaBridge(Node):
         self.right_waypoint_client = self.create_client(PlanPath, 'right_robot_waypoints')
         self.right_waypoint_client.wait_for_service(timeout_sec=2.0)
 
+        self.left_servo_client = self.create_client(Trigger, '/left_servo_node/start_servo')
+        self.left_servo_client.wait_for_service(timeout_sec=2.0)
+        self.right_servo_client = self.create_client(Trigger, '/right_servo_node/start_servo')
+        self.right_servo_client.wait_for_service(timeout_sec=2.0)
+
+        self.left_servo_shutdown_client = self.create_client(Trigger, '/left_servo_node/stop_servo')
+        self.left_servo_shutdown_client.wait_for_service(timeout_sec=2.0)
+        self.right_servo_shutdown_client = self.create_client(Trigger, '/right_servo_node/stop_servo')
+        self.right_servo_shutdown_client.wait_for_service(timeout_sec=2.0)
+
+
         # create timer
         self.timer = self.create_timer(0.04, self.timer_callback)
 
@@ -103,12 +114,6 @@ class CvFrankaBridge(Node):
         self.right_twist_pub = self.create_publisher(
             TwistStamped,
             '/right_servo_node/delta_twist_cmds', 10)
-        # self.gripper_grasping_client.wait_for_server(timeout_sec=1.0)
-        # # with a fake gripper, the homing server will not be created
-        # if not self.gripper_homing_client.wait_for_server(
-        #         timeout_sec=1):
-        #     self.gripper_ready = False
-        #     self.gripper_homed = True
 
         # create tf buffer and listener
         self.buffer = Buffer()
@@ -121,12 +126,10 @@ class CvFrankaBridge(Node):
         self.right_gripper_ready = True
         self.left_gripper_status = "Open"
         self.right_gripper_status = "Open"
-        self.left_gripper_homed = False
-        self.right_gripper_homed = False
         self.left_gripper_force_control = False
         self.right_gripper_force_control = False
-        self.left_gripper_force = 0.001
-        self.right_gripper_force = 0.001
+        self.left_gripper_force = 40.0
+        self.right_gripper_force = 40.0
         self.max_gripper_force = 10.0
 
         self.left_current_waypoint = None
@@ -191,6 +194,35 @@ class CvFrankaBridge(Node):
         self.left_count = 0
         self.right_count = 0
 
+        self.get_logger().info("CvFrankaBridge node initialized, follow the instructions to control the robot.")
+
+    def activate_servo(self, prefix):
+        """Activate the servo controller."""
+        if prefix == "L_":
+            future = self.left_servo_client.call_async(Trigger.Request())
+            if future.done():
+                self.get_logger().info("Left servo activated")
+        elif prefix == "R_":
+            future = self.right_servo_client.call_async(Trigger.Request())
+            if future.done():
+                self.get_logger().info("Right servo activated")
+        else:
+            future = self.left_servo_client.call_async(Trigger.Request())
+            future = self.right_servo_client.call_async(Trigger.Request())
+
+    def deactivate_servo(self, prefix):
+        """Deactivate the servo controller."""
+        if prefix == "L_":
+            future = self.left_servo_shutdown_client.call_async(Trigger.Request())
+            if future.done():
+                self.get_logger().info("Left servo deactivated")
+        elif prefix == "R_":
+            future = self.right_servo_shutdown_client.call_async(Trigger.Request())
+            if future.done():
+                self.get_logger().info("Right servo deactivated")
+        else:
+            future = self.left_servo_shutdown_client.call_async(Trigger.Request())
+            future = self.right_servo_shutdown_client.call_async(Trigger.Request())
 
     def create_text_marker(self, text, prefix=None):
         """Create a text marker."""
@@ -242,11 +274,19 @@ class CvFrankaBridge(Node):
         marker.color.b = 1.0
         return marker
 
-    # def gripper_homing_callback(self, request, response):
-    #     """Callback for the gripper homing service."""
-    #     goal = Homing.Goal()
-    #     self.gripper_homing_client.send_goal_async(goal, feedback_callback=self.feedback_callback)
-    #     return response
+    def send_gripper_commamd(self, prefix, position, effort):
+        command = GripperCommandMsg()
+        command.position = position
+        command.max_effort = effort
+        goal_msg = GripperCommand.Goal()
+        goal_msg.command = command
+        if prefix == "L_":
+            future = self.left_gripper_client.send_goal_async(goal_msg)
+            future.add_done_callback(lambda f: self.get_result_callback(f, prefix))
+        elif prefix == "R_":
+            future = self.right_gripper_client.send_goal_async(goal_msg)
+            future.add_done_callback(lambda f: self.get_result_callback(f, prefix))
+            
 
     def get_transform(self, target_frame, source_frame):
         """Get the transform between two frames."""
@@ -356,34 +396,26 @@ class CvFrankaBridge(Node):
 
             self.left_text_marker = self.create_text_marker(msg.data, prefix="L_")
             self.left_move_robot = False
+            if msg.data == "Thumb_Up":
+                self.activate_servo("L_")
+            elif msg.data == "Thumb_Down":
+                self.deactivate_servo("L_")
 
-        # elif msg.data == "Closed_Fist" and self.left_gripper_ready and self.left_gripper_status == "Open":
-        #     # if closed fist, close the gripper
-        #     self.left_text_marker = self.create_text_marker(msg.data, prefix="L_")
-        #     self.left_gripper_ready = False
-        #     self.left_gripper_status = "Closed"
-        #     self.left_gripper_force_control = False
-        #     self.left_gripper_force = 0.001
-        #     grasp_goal = Grasp.Goal()
-        #     grasp_goal.width = 0.01
-        #     grasp_goal.speed = 0.1
-        #     grasp_goal.epsilon.inner = 0.05
-        #     grasp_goal.epsilon.outer = 0.05
-        #     grasp_goal.force = self.left_gripper_force
-        #     future = self.left_gripper_client.send_goal_async(grasp_goal, feedback_callback=self.feedback_callback)
-        #     future.add_done_callback(self.grasp_response_callback)
+        elif msg.data == "Closed_Fist" and self.left_gripper_ready and self.left_gripper_status == "Open":
+            # if closed fist, close the gripper
+            self.left_text_marker = self.create_text_marker(msg.data, prefix="L_")
+            self.left_gripper_ready = False
+            self.left_gripper_force_control = False
+            self.left_gripper_force = 40.0
+            self.send_gripper_commamd("L_", 0.0, self.left_gripper_force)
+            self.left_gripper_status = "Closed"
 
-        # elif msg.data == "Open_Palm" and self.left_gripper_ready and self.left_gripper_status == "Closed":
-        #     # if open palm, open the gripper
-        #     self.left_text_marker = self.create_text_marker(msg.data, prefix="L_")
-        #     self.left_gripper_force = 3.0
-        #     grasp_goal = Grasp.Goal()
-        #     grasp_goal.width = 0.075
-        #     grasp_goal.speed = 0.2
-        #     grasp_goal.epsilon.inner = 0.001
-        #     grasp_goal.epsilon.outer
-        #     grasp_goal.force = self.left_gripper_force
-        #     future = self.left_gripper_client.send_goal_async(grasp_goal, feedback_callback=self.feedback_callback)
+        elif msg.data == "Open_Palm" and self.left_gripper_ready and self.left_gripper_status == "Closed":
+            # if open palm, open the gripper
+            self.left_text_marker = self.create_text_marker(msg.data, prefix="L_")
+            self.left_gripper_force = 3.0
+            self.send_gripper_commamd("L_", 0.035, self.left_gripper_force)
+            self.left_gripper_status = "Open"
 
         if msg.data != "Thumb_Up" and msg.data != "Thumb_Down":
             self.left_count = 0
@@ -421,35 +453,26 @@ class CvFrankaBridge(Node):
 
             self.right_text_marker = self.create_text_marker(msg.data, prefix="R_")
             self.right_move_robot = False
+            if msg.data == "Thumb_Up":
+                self.activate_servo("R_")
+            elif msg.data == "Thumb_Down":
+                self.deactivate_servo("R_")
 
-        # elif msg.data == "Closed_Fist" and self.right_gripper_ready and self.right_gripper_status == "Open":
-        #     # if closed fist, close the gripper
-        #     self.right_text_marker = self.create_text_marker(msg.data, prefix="R_")
-        #     self.right_gripper_ready = False
-        #     self.right_gripper_status = "Closed"
-        #     self.right_gripper_force_control = False
-        #     self.right_gripper_force = 0.001
-        #     grasp_goal = Grasp.Goal()
-        #     grasp_goal.width = 0.01
-        #     grasp_goal.speed = 0.1
-        #     grasp_goal.epsilon.inner = 0.05
-        #     grasp_goal.epsilon.outer = 0.05
-        #     grasp_goal.force = self.right_gripper_force
-        #     future = self.right_gripper_client.send_goal_async(grasp_goal, feedback_callback=self.feedback_callback)
-        #     future.add_done_callback(self.grasp_response_callback)
+        elif msg.data == "Closed_Fist" and self.right_gripper_ready and self.right_gripper_status == "Open":
+            # if closed fist, close the gripper
+            self.right_text_marker = self.create_text_marker(msg.data, prefix="R_")
+            self.right_gripper_ready = False
+            self.right_gripper_force_control = False
+            self.right_gripper_force = 40.0
+            self.send_gripper_commamd("R_", 0.0, self.right_gripper_force)
+            self.right_gripper_status = "Closed"
 
-        # elif msg.data == "Open_Palm" and self.right_gripper_ready and self.right_gripper_status == "Closed":
-        #     # if open palm, open the gripper
-        #     self.right_text_marker = self.create_text_marker(msg.data, prefix="R_")
-        #     self.right_gripper_force = 3.0
-        #     grasp_goal = Grasp.Goal()
-        #     grasp_goal.width = 0.075
-        #     grasp_goal.speed = 0.2
-        #     grasp_goal.epsilon.inner = 0.001
-        #     grasp_goal.epsilon.outer = 0.001
-        #     grasp_goal.force = self.right_gripper_force
-        #     future = self.right_gripper_client.send_goal_async(grasp_goal, feedback_callback=self.feedback_callback)
-        #     future.add_done_callback(self.grasp_response_callback)
+        elif msg.data == "Open_Palm" and self.right_gripper_ready and self.right_gripper_status == "Closed":
+            # if open palm, open the gripper
+            self.right_text_marker = self.create_text_marker(msg.data, prefix="R_")
+            self.right_gripper_force = 3.0
+            self.send_gripper_commamd("R_", 0.035, self.right_gripper_force)
+            self.right_gripper_status = "Open"
 
         if msg.data != "Thumb_Up" and msg.data != "Thumb_Down":
             self.right_count = 0
@@ -465,35 +488,22 @@ class CvFrankaBridge(Node):
         self.right_prev_gesture = msg.data
 
 
-    def grasp_response_callback(self, future):
-        """Callback for the grasp response."""
-
-        goal_handle = future.result()
-        if not goal_handle.accepted:
-            self.get_logger().info('Goal rejected :(')
-            return
-        self.get_logger().info('Goal accepted :)')
-
-        self._get_result_future = goal_handle.get_result_async()
-        self._get_result_future.add_done_callback(self.get_result_callback)
-
-    def get_result_callback(self, future):
+    def get_result_callback(self, future, prefix):
         """Callback for the grasp result."""
 
-        result = future.result().result
-        self.get_logger().info(f'Result: {result}')
-        self.gripper_ready = True
+        result = future.result()
+        if prefix == "L_":
+            self.left_gripper_ready = True
+        elif prefix == "R_":
+            self.right_gripper_ready = True
+        else:
+            self.left_gripper_ready = True
+            self.right_gripper_ready = True
 
     def feedback_callback(self, feedback):
         """Callback for the feedback from the gripper action server."""
 
         self.get_logger().info(f"Feedback: {feedback}")
-
-    # async def home_gripper(self):
-    #     """Home the gripper."""
-
-    #     await self.gripper_homing_client.send_goal_async(Homing.Goal(), feedback_callback=self.feedback_callback)
-    #     self.gripper_homed = True
 
     async def timer_callback(self):
         """Callback for the timer."""
@@ -602,24 +612,7 @@ class CvFrankaBridge(Node):
         robot_move.pose.position.x = np.round(output * (desired_ee_pose.position.x - ee_pose.position.x),4)*10
         robot_move.pose.position.y = np.round(output * (desired_ee_pose.position.y - ee_pose.position.y),4)*10
         robot_move.pose.position.z = np.round(output * (desired_ee_pose.position.z - ee_pose.position.z),4)*10
-        #     robot_move.header.frame_id = "panda_link0"
-        #     robot_move.header.stamp = self.get_clock().now().to_msg()
-        #     robot_move_x = (self.desired_ee_pose.position.x - ee_pose.position.x)
-        #     robot_move_y = -(self.desired_ee_pose.position.y - ee_pose.position.y)
-        #     robot_move_z = -(self.desired_ee_pose.position.z - ee_pose.position.z)
-        #     robot_move_norm = np.linalg.norm(np.array([robot_move_x, robot_move_y, robot_move_z]))
-        #     robot_move.pose.position.x = robot_move_x/robot_move_norm * output
-        #     robot_move.pose.position.y = robot_move_y/robot_move_norm * output
-        #     robot_move.pose.position.z = robot_move_z/robot_move_norm * output
-        #     self.get_logger().info(f"linear move: {np.linalg.norm(np.array([robot_move.pose.position.x, robot_move.pose.position.y, robot_move.pose.position.z]) - np.array([0.0, 0.0, 0.0]))}")
 
-
-
-
-        # planpath_request = PlanPath.Request()
-        # planpath_request.waypoint = robot_move
-        # planpath_request.angles = euler_output
-        # future = self.waypoint_client.call_async(planpath_request)
         if prefix == "L_":
 
             planpath_request = PlanPath.Request()
@@ -627,7 +620,6 @@ class CvFrankaBridge(Node):
             planpath_request.angles = euler_output
             current_pose = self.left_arm_api2_client.get_current_ee_pose().pose
             if self.position_reached(current_pose, desired_ee_pose, self.position_tolerance):
-                print("left_position reached")
                 twist = TwistStamped()
                 twist.header.frame_id = "world"
                 twist.header.stamp = self.get_clock().now().to_msg()
@@ -653,10 +645,9 @@ class CvFrankaBridge(Node):
             planpath_request.waypoint = robot_move
             planpath_request.angles = euler_output
             current_pose = self.right_arm_api2_client.get_current_ee_pose().pose
-            print("current_pose", current_pose)
-            print("desired_ee_pose", desired_ee_pose)
+            # print("current_pose", current_pose)
+            # print("desired_ee_pose", desired_ee_pose)
             if self.position_reached(current_pose, desired_ee_pose, self.position_tolerance):
-                print("right_position reached")
                 twist = TwistStamped()
                 twist.header.frame_id = "world"
                 twist.header.stamp = self.get_clock().now().to_msg()
@@ -685,7 +676,7 @@ class CvFrankaBridge(Node):
         desired_quat = [desired_pose.orientation.x, desired_pose.orientation.y, desired_pose.orientation.z, desired_pose.orientation.w]
 
         current_rot = R.from_quat(current_quat).as_euler('xyz', degrees=True)[0]  # Extract roll (X-axis rotation)
-        desired_rot = R.from_quat(desired_quat).as_euler('xyz', degrees=True)[0]  # 
+        desired_rot = R.from_quat(desired_quat).as_euler('xyz', degrees=True)[0] 
         
         rot_diff = abs(current_rot - desired_rot)
         
