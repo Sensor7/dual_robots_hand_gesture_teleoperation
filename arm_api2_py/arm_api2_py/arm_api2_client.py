@@ -197,7 +197,6 @@ class ArmApi2Client:
         self.logger.info(
             " ArmApi2Client: change_state request sent, waiting for response...")
 
-        import pdb; pdb.set_trace()
         response = self._service_client_state_change.call(request)
 
         if response.success:

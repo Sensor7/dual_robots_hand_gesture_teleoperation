@@ -41,12 +41,20 @@ def generate_launch_description():
         .to_moveit_configs()
     )
 
+    publish_robot_description_semantic = {"publish_robot_description_semantic": True}
+    publish_robot_description = {"publish_robot_description": True}
+    publish_robot_description_kinematics = {"publish_robot_description_kinematics": True}
+
+
     # Start the actual move_group node/action server
     move_group_node = Node(
         package="moveit_ros_move_group",
         executable="move_group",
         output="screen",
-        parameters=[moveit_config.to_dict()],
+        parameters=[moveit_config.to_dict(),
+                    publish_robot_description_semantic,
+                    publish_robot_description,
+                    publish_robot_description],
     )
 
     # RViz
@@ -55,7 +63,6 @@ def generate_launch_description():
         "config/moveit.rviz",
     )
 
-    print("moveit config:", moveit_config.robot_description_kinematics)
     rviz_node = Node(
         package="rviz2",
         executable="rviz2",
@@ -112,6 +119,8 @@ def generate_launch_description():
         "joint_state_broadcaster",
         "left_arm_controller",
         "right_arm_controller",
+        "left_hand_controller",
+        "right_hand_controller",
         # "both_arm_controller",
     ]:
         load_controllers += [

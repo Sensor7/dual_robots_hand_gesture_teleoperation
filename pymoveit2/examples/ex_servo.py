@@ -14,6 +14,7 @@ from rclpy.node import Node
 from pymoveit2 import MoveIt2Servo
 from pymoveit2.robots import panda_left as left_robot
 from pymoveit2.robots import panda_right as right_robot
+from pymoveit2.robots import panda as robot
 
 
 def main():
@@ -28,7 +29,7 @@ def main():
     # Create MoveIt 2 Servo interface
     moveit2_servo = MoveIt2Servo(
         node=node,
-        frame_id=left_robot.base_link_name(),
+        frame_id=robot.base_link_name(),
         callback_group=callback_group,
     )
 

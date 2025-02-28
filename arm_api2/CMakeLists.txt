@@ -44,6 +44,7 @@ ament_target_dependencies(
 install(DIRECTORY 
   launch
   config
+  utils
   DESTINATION share/${PROJECT_NAME}
 )
 
@@ -62,17 +63,33 @@ target_include_directories(joy_ctl
 
 # python dependencies 
 ament_target_dependencies(joy_ctl
-  rclcpp std_msgs geometry_msgs std_srvs sensor_msgs)
+  rclcpp std_msgs geometry_msgs std_srvs sensor_msgs control_msgs rclcpp_action)
 
 install(TARGETS 
 joy_ctl
 DESTINATION lib/${PROJECT_NAME})
 
-# Install Python modules
-ament_python_install_package(${PROJECT_NAME})
+add_executable(keyboard_ctl src/servo_keyboard_input.cpp)
 
-install(PROGRAMS 
-  arm_api2/scripts/trajectory_sender.py
+ament_target_dependencies(keyboard_ctl
+  rclcpp std_msgs geometry_msgs std_srvs sensor_msgs control_msgs rclcpp_action)
+
+install(TARGETS
+  keyboard_ctl
+  DESTINATION lib/${PROJECT_NAME})
+
+# Install Python modules
+#ament_python_install_package(${PROJECT_NAME})
+
+install(PROGRAMS
+  examples/scripts/joint_sender_action_client_async.py
+  examples/scripts/joint_sender_action_client.py
+  examples/scripts/pose_sender_action_client_async.py
+  examples/scripts/pose_sender_action_client.py
+  examples/scripts/trajectory_sender_action_client_async.py
+  examples/scripts/trajectory_sender_action_client.py
+  examples/scripts/servo_twist_sender.py
+  examples/scripts/servo_watchdog.py
   DESTINATION lib/${PROJECT_NAME}
 )
 

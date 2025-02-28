@@ -12,7 +12,7 @@ from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.node import Node
 
 from pymoveit2 import MoveIt2, MoveIt2State
-from pymoveit2.robots import panda as robot
+from pymoveit2.robots import panda_left as left_robot
 
 
 def main():
@@ -32,10 +32,10 @@ def main():
     # Create MoveIt 2 interface
     moveit2 = MoveIt2(
         node=node,
-        joint_names=robot.joint_names(),
-        base_link_name=robot.base_link_name(),
-        end_effector_name=robot.end_effector_name(),
-        group_name=robot.MOVE_GROUP_ARM,
+        joint_names=left_robot.joint_names(),
+        base_link_name=left_robot.base_link_name(),
+        end_effector_name=left_robot.end_effector_name(),
+        group_name=left_robot.MOVE_GROUP_ARM,
         callback_group=callback_group,
     )
 

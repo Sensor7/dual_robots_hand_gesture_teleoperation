@@ -6,9 +6,9 @@ MOVE_GROUP_GRIPPER: str = "left_hand"
 OPEN_GRIPPER_JOINT_POSITIONS: List[float] = [0.04, 0.04]
 CLOSED_GRIPPER_JOINT_POSITIONS: List[float] = [0.0, 0.0]
 
-prefix = "L_panda_"
+prefix: str = "L_panda_"
 
-def joint_names(prefix: str = "panda_") -> List[str]:
+def joint_names(prefix: str = prefix) -> List[str]:
     return [
         prefix + "joint1",
         prefix + "joint2",
@@ -20,15 +20,15 @@ def joint_names(prefix: str = "panda_") -> List[str]:
     ]
 
 
-def base_link_name(prefix: str = "panda_") -> str:
+def base_link_name(prefix: str = prefix) -> str:
     return prefix + "link0"
 
 
-def end_effector_name(prefix: str = "panda_") -> str:
-    return prefix + "hand_tcp"
+def end_effector_name(prefix: str = prefix) -> str:
+    return prefix + "hand"
 
 
-def gripper_joint_names(prefix: str = "panda_") -> List[str]:
+def gripper_joint_names(prefix: str = prefix) -> List[str]:
     return [
         prefix + "finger_joint1",
         prefix + "finger_joint2",
