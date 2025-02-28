@@ -1,5 +1,18 @@
-# dual_panda_demo
-dual_panda_demo ros2
+# dual_panda_teleoperation
+
+This repository aims at Sereact coding challenge. And it implemented dual pandas robot teleoperated by human hand movements and gestures. You can use RGB camera to control the robot.
+
+- Thumb up: activate servo and start teleoperation
+
+- Thumb down: stop servo and teleoperation
+
+- Close Fist: close the two finger gripper
+
+- Open palm: open the two finger gripper
+
+And this repository is mainly built from [FrankaTeleop](https://github.com/gjcliff/FrankaTeleop), which is an open source repository already achieve nice depth camera hand gesture teleoperation. But this package is built on ros2 iron, and there is no so many suports about moveit servo in ros2 humble. So I adapted above repository to dual franka panda arm and added the python wrapper to control robot.
+
+And because ros2 humble is not yet integrated with moveit python interface, so I use [arm_api2](https://github.com/CroboticSolutions/arm_api2) as wrapper to control robot arm and wrote a python implementation of the arm api2 for easier usage.
 
 
 # prepare
@@ -18,50 +31,46 @@ pip install mediapipe
 pip install torch==2.5.1 torchvision==0.20.1 torchaudio==2.5.1 --index-url https://download.pytorch.org/whl/cu121
 pip install transformers
 pip install --upgrade transforms3d
-
 ```
-
 **if you don't have cuda gpu, remember to deactivate the DL monocular camera depth estimation module, otherwise it will run very slow**
 
-4. 
+4. RGB Camera and usb_camera install
+```bash
+sudo apt install ros-humble-usb-cam
+```
 
 
 
 # build and run
-```
+
+```bash
 colcon build --cmake-args  -DCMAKE_BUILD_TYPE=Release
-. install/setup.bash
-
-ros2 launch dual_panda_description demo.launch.py
-ros2 launch dual_panda_moveit_config demo_my.launch.py
-ros2 launch dual_panda_demo my_move_group.launch.py
-
+source install/setup.bash
 ```
 
-# xxx
-- ros2 launch moveit_setup_assistant setup_assistant.launch.py
+Remember to source again in following steps
 
-# issues
-- Q: <br />
-  [ERROR] [1646681894.535920515, 851.070000000]: IKConstraintSampler received dirty robot state, but valid transforms are required. Failing.
+## start robot and moveit and also arm api2
 
-  A: <br />
-  clone MoveIt2 2.5.5(humble), change func:sample to MoveIt 2.10
-  src/moveit_core/constraint_samplers/src/union_constraint_sampler.cpp 
-  ```
-  bool UnionConstraintSampler::sample(moveit::core::RobotState& state, const moveit::core::RobotState& reference_state,
-                                      unsigned int max_attempts)
-  {
-    state = reference_state;
-    for (ConstraintSamplerPtr& sampler : samplers_)
-    {
-      // ConstraintSampler::sample returns states with dirty link transforms (because it only writes values)
-      // but requires a state with clean link transforms as input. This means that we need to clean the link
-      // transforms between calls to ConstraintSampler::sample.
-      state.updateLinkTransforms();
-      if (!sampler->sample(state, max_attempts))
-        return false;
-    }
-    return true;
-  }
-  ```
+```bash
+ros2 launch dual_panda_moveit_config demo_my.launch.py
+# In other three terminals
+ros2 launch arm_api2 moveit2_iface.launch.py robot_name:=franka_left
+ros2 launch arm_api2 moveit2_iface.launch.py robot_name:=franka_right
+ros2 launch dual_panda_description demo.launch.py # Use for viewing robot and also the camera image and marker instructions
+```
+
+## start camera and also handcv
+```bash
+ros2 launch handcv camera.launch.py
+```
+
+## 
+
+## start teleoperation
+```bash
+ros2 run cv_franka_bridge cv_franka_bridge.py
+```
+
+
+
