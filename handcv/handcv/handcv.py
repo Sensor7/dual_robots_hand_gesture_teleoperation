@@ -37,6 +37,7 @@ import numpy as np
 import cv2 as cv
 import torch
 from transformers import AutoImageProcessor, AutoModelForDepthEstimation
+from scipy.spatial.transform import Rotation as R
 
 
 # Initialize the Depth Anything model
@@ -96,6 +97,8 @@ class HandCV(Node):
         self.image_height = 0
         self.left_centroid = np.array([0.0, 0.0, 0.0])
         self.right_centroid = np.array([0.0, 0.0, 0.0])
+        self.left_rotation = 0.0
+        self.right_rotation = 0.0
         self.use_gpu = False
 
     def depth_image_from_color_image(self, color_image):
@@ -121,7 +124,7 @@ class HandCV(Node):
         """Cpature color images and convert them to OpenCV images."""
         self.color_image = self.bridge.imgmsg_to_cv2(
             msg, desired_encoding="rgb8")
-        # self.color_image = cv.flip(self.color_image, 1)
+        self.color_image = cv.flip(self.color_image, 1)
         color_image = self.color_image.copy()
         if PILImage.fromarray(color_image).mode != 'RGB':
             color_image = np.array(PILImage.fromarray(color_image).convert('RGB'))
@@ -192,10 +195,14 @@ class HandCV(Node):
             sum_y = np.sum(right_coords[:, 1])
             self.right_centroid = np.array([sum_x/length, sum_y/length, 0.0])
 
+            rotation = []
+            hand_landmark = detection_result.hand_landmarks[right_index]
+            self.right_rotation = self.mps.calculate_hand_rotation(hand_landmark)
+
             if self.use_gpu:
                 self.right_centroid[2] = self.depth_image[int(self.right_centroid[1]), int(self.right_centroid[0])]
             else:
-                self.right_centroid[2] = 500
+                self.right_centroid[2] = 40.0
 
         if detection_result.hand_landmarks and left_index is not None:
             left_coords = np.array([[landmark.x * np.shape(annotated_image)[1],
@@ -212,6 +219,11 @@ class HandCV(Node):
             sum_y = np.sum(left_coords[:, 1])
             self.left_centroid = np.array([sum_x/length, sum_y/length, 0.0])
 
+            rotation = []
+            hand_landmark = detection_result.hand_landmarks[left_index]
+            self.left_rotation = self.mps.calculate_hand_rotation(hand_landmark)
+
+
             if self.use_gpu:
                 self.left_centroid[2] = self.depth_image[int(self.left_centroid[1]), int(self.left_centroid[0])]
             else:
@@ -220,13 +232,25 @@ class HandCV(Node):
         self.right_waypoint.pose.position.x = self.right_centroid[0]
         self.right_waypoint.pose.position.y = self.right_centroid[1]
         self.right_waypoint.pose.position.z = self.right_centroid[2]
+        r = R.from_euler('x', self.right_rotation)
+        quat = r.as_quat()
+        self.right_waypoint.pose.orientation.x = quat[0]
+        self.right_waypoint.pose.orientation.y = quat[1]
+        self.right_waypoint.pose.orientation.z = quat[2]
+        self.right_waypoint.pose.orientation.w = quat[3]
 
         self.left_waypoint.pose.position.x = self.left_centroid[0]
         self.left_waypoint.pose.position.y = self.left_centroid[1]
         self.left_waypoint.pose.position.z = self.left_centroid[2]
+        r = R.from_euler('x', self.left_rotation)
+        quat = r.as_quat()
+        self.left_waypoint.pose.orientation.x = quat[0]
+        self.left_waypoint.pose.orientation.y = quat[1]
+        self.left_waypoint.pose.orientation.z = quat[2]
+        self.left_waypoint.pose.orientation.w = quat[3]
 
-        right_text = f"(x: {np.round(self.right_centroid[0] - self.image_width/2)}, y: {np.round(self.right_centroid[1] - self.image_height/2)}, z: {np.round(self.right_centroid[2])})"
-        left_text = f"(x: {np.round(self.left_centroid[0] - self.image_width/2)}, y: {np.round(self.left_centroid[1] - self.image_height/2)}, z: {np.round(self.left_centroid[2])})"
+        right_text = f"(x: {np.round(self.right_centroid[0] - self.image_width/2)}, y: {np.round(self.right_centroid[1] - self.image_height/2)}, rotation: {self.right_rotation})"
+        left_text = f"(x: {np.round(self.left_centroid[0] - self.image_width/2)}, y: {np.round(self.left_centroid[1] - self.image_height/2)}, rotation: {self.left_rotation})"
 
         annotated_image = cv.putText(annotated_image, right_text,
                                      (int(self.right_centroid[0])-100,
@@ -267,7 +291,7 @@ class HandCV(Node):
     def timer_callback(self):
         """Publish the annotated image and the waypoint for the arm"""
         if self.color_image is not None :
-            annotated_image, detection_result = self.process_color_image()
+            annotated_image, detection_result= self.process_color_image()
             cv_image, left_gesture, right_gesture = self.process_depth_image(
                 annotated_image, detection_result)
             self.cv_image_pub.publish(cv_image)

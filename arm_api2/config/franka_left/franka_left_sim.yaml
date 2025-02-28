@@ -1,6 +1,6 @@
 robot: 
   arm_name: left_arm  
-  ee_link_name: L_panda_hand
+  ee_link_name: L_panda_link8
   robot_desc: robot_description
   move_group_ns: 
   planning_scene: planning_scene

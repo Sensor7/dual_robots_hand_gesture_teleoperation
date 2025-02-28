@@ -20,7 +20,7 @@ ACTION CLIENTS:
   + /panda_gripper/grasp (Grasp) - The action server that controls the gripper.
 
 """
-from geometry_msgs.msg import Pose, PoseStamped, Point, Quaternion
+from geometry_msgs.msg import Pose, PoseStamped, Point, Quaternion, TwistStamped
 
 from visualization_msgs.msg import Marker
 
@@ -53,7 +53,7 @@ class CvFrankaBridge(Node):
         # declare parameters
         self.declare_parameter('x_limits', "0.2,0.6")
         self.declare_parameter('y_limits', "-0.25,0.25")
-        self.declare_parameter('z_limits', "0.2,0.6")
+        self.declare_parameter('z_limits', "0.2,0.7")
 
         # get parameters
         self.x_limits = [float(value) for value in self.get_parameter('x_limits').get_parameter_value().string_value.split(",")]
@@ -95,6 +95,14 @@ class CvFrankaBridge(Node):
         self.right_gripper_client = ActionClient(
                 self, GripperCommand, 'right_hand_controller/gripper_cmd')
 
+        # create twist publisher
+        self.left_twist_pub = self.create_publisher(
+            TwistStamped,
+            '/left_servo_node/delta_twist_cmds', 10)
+        
+        self.right_twist_pub = self.create_publisher(
+            TwistStamped,
+            '/right_servo_node/delta_twist_cmds', 10)
         # self.gripper_grasping_client.wait_for_server(timeout_sec=1.0)
         # # with a fake gripper, the homing server will not be created
         # if not self.gripper_homing_client.wait_for_server(
@@ -124,7 +132,7 @@ class CvFrankaBridge(Node):
         self.left_current_waypoint = None
         self.left_previous_waypoint = None
         self.left_offset = None
-        self.left_initial_ee_pose = Pose(position=Point(x=0.30674, y=-0.0014384, z=0.48529),
+        self.left_initial_ee_pose = Pose(position=Point(x=0.30674, y=0.499969, z=0.590256),
                                         orientation=Quaternion(x=1.0, y=0.0, z=0.0, w=0.0))
         self.left_desired_ee_pose = self.left_initial_ee_pose
         self.left_waypoints = []
@@ -135,7 +143,7 @@ class CvFrankaBridge(Node):
         self.right_current_waypoint = None
         self.right_previous_waypoint = None
         self.right_offset = None
-        self.right_initial_ee_pose = Pose(position=Point(x=0.30674, y=-0.0014384, z=0.48529),
+        self.right_initial_ee_pose = Pose(position=Point(x=0.30674, y=-0.5, z=0.59),
                                         orientation=Quaternion(x=1.0, y=0.0, z=0.0, w=0.0))
         self.right_desired_ee_pose = self.right_initial_ee_pose
         self.right_waypoints = []
@@ -143,11 +151,17 @@ class CvFrankaBridge(Node):
         self.right_prev_gesture = None
         self.right_start_time = self.get_clock().now()
 
+        self.left_desired_ee_pose_client = self.create_client(PlanPath, 'left_desired_ee_pose')
+        self.left_desired_ee_pose_client.wait_for_service(timeout_sec=2.0)
+        self.right_desired_ee_pose_client = self.create_client(PlanPath, 'right_desired_ee_pose')
+        self.right_desired_ee_pose_client.wait_for_service(timeout_sec=2.0)
+
 
         self.start_time = self.get_clock().now()
 
         self.lower_distance_threshold = 3.0
         self.upper_distance_threshold = 10.0
+        self.position_tolerance = [0.05, 0.05, 0.05]
 
         self.kp = 5.0
         self.ki = 0.0
@@ -163,9 +177,11 @@ class CvFrankaBridge(Node):
         self.yaw_error_prior = 0
 
         # bounding box variables
-        # self.x_limits = [0.2, 0.6]
-        # self.y_limits = [-0.25, 0.25]
-        # self.z_limits = [0.2, 0.6]
+        self.x_limits = [0.2, 0.6]
+        self.y_limits = [-0.25, 0.25]
+        self.left_y_limits = [0.25, 0.75]
+        self.right_y_limits = [-0.75, -0.25]
+        self.z_limits = [0.2, 0.8]
         self.left_bounding_box_marker = self.create_box_marker(prefix="L_")
         self.right_bounding_box_marker = self.create_box_marker(prefix="R_")
 
@@ -494,8 +510,8 @@ class CvFrankaBridge(Node):
 
         if (self.left_desired_ee_pose.position.x < self.x_limits[0] or self.left_desired_ee_pose.position.x > self.x_limits[1]):
             self.left_desired_ee_pose.position.x = self.x_limits[0] if self.left_desired_ee_pose.position.x < self.x_limits[0] else self.x_limits[1]
-        if (self.left_desired_ee_pose.position.y < self.y_limits[0] or self.left_desired_ee_pose.position.y > self.y_limits[1]):
-            self.left_desired_ee_pose.position.y = self.y_limits[0] if self.left_desired_ee_pose.position.y < self.y_limits[0] else self.y_limits[1]
+        if (self.left_desired_ee_pose.position.y < self.left_y_limits[0] or self.left_desired_ee_pose.position.y > self.left_y_limits[1]):
+            self.left_desired_ee_pose.position.y = self.left_y_limits[0] if self.left_desired_ee_pose.position.y < self.left_y_limits[0] else self.left_y_limits[1]
         if (self.left_desired_ee_pose.position.z < self.z_limits[0] or self.left_desired_ee_pose.position.z > self.z_limits[1]):
             self.left_desired_ee_pose.position.z = self.z_limits[0] if self.left_desired_ee_pose.position.z < self.z_limits[0] else self.z_limits[1]
 
@@ -527,67 +543,7 @@ class CvFrankaBridge(Node):
 
         self.PID_control(left_ee_pose, prefix="L_")
         self.PID_control(right_ee_pose, prefix="R_")
-        
-        # else:
-        #     # even if the robot is not tracking the hand, we need to enforce
-        #     # that it stays in the same place
-        #
-        #     # Get the current and desired positions and orientations of the end-effector
-        #     ee_pose = self.get_ee_pose()
-        #     current_euler = euler_from_quaternion([ee_pose.orientation.x, ee_pose.orientation.y, ee_pose.orientation.z, ee_pose.orientation.w])
-        #     desired_euler = euler_from_quaternion([self.desired_ee_pose.orientation.x, self.desired_ee_pose.orientation.y, self.desired_ee_pose.orientation.z, self.desired_ee_pose.orientation.w])
-        #
-        #     # Orientation PID loops
-        #     if current_euler[0] < -np.pi:
-        #         current_euler[0] += 2 * np.pi
-        #     if desired_euler[0] < -np.pi:
-        #         desired_euler[0] += 2 * np.pi
-        #     roll_error = desired_euler[0] - current_euler[0]
-        #     pitch_error = desired_euler[1] - current_euler[1]
-        #     yaw_error = desired_euler[2] - current_euler[2]
-        #
-        #     roll_derivative = (roll_error - self.roll_error_prior)
-        #     pitch_derivative = (pitch_error - self.pitch_error_prior)
-        #     yaw_derivative = (yaw_error - self.yaw_error_prior)
-        #
-        #     self.roll_error_prior = roll_error
-        #     self.pitch_error_prior = pitch_error
-        #     self.yaw_error_prior = yaw_error
-        #
-        #     roll_output = self.kp * roll_error + self.kd * roll_derivative
-        #     pitch_output = self.kp * pitch_error + self.kd * pitch_derivative
-        #     yaw_output = self.kp * yaw_error + self.kd * yaw_derivative
-        #
-        #     euler_output = [roll_output, pitch_output, yaw_output]
-        #
-        #     # Position PID loop
-        #     ee_pose = self.get_ee_pose()
-        #     error = np.linalg.norm(np.array([self.desired_ee_pose.position.x, self.desired_ee_pose.position.y, self.desired_ee_pose.position.z]) -
-        #                            np.array([ee_pose.position.x, ee_pose.position.y, ee_pose.position.z]))
-        #
-        #     derivative = (error - self.position_error_prior)
-        #     output = self.kp * error + self.kd * derivative
-        #     self.position_error_prior = error
-        #
-        #     if output > self.max_output:
-        #         output = self.max_output
-        #
-        #     robot_move = PoseStamped()
-        #     robot_move.header.frame_id = "panda_link0"
-        #     robot_move.header.stamp = self.get_clock().now().to_msg()
-        #     robot_move_x = (self.desired_ee_pose.position.x - ee_pose.position.x)
-        #     robot_move_y = -(self.desired_ee_pose.position.y - ee_pose.position.y)
-        #     robot_move_z = -(self.desired_ee_pose.position.z - ee_pose.position.z)
-        #     robot_move_norm = np.linalg.norm(np.array([robot_move_x, robot_move_y, robot_move_z]))
-        #     robot_move.pose.position.x = robot_move_x/robot_move_norm * output
-        #     robot_move.pose.position.y = robot_move_y/robot_move_norm * output
-        #     robot_move.pose.position.z = robot_move_z/robot_move_norm * output
-        #     self.get_logger().info(f"linear move: {np.linalg.norm(np.array([robot_move.pose.position.x, robot_move.pose.position.y, robot_move.pose.position.z]) - np.array([0.0, 0.0, 0.0]))}")
-        #
-        #     planpath_request = PlanPath.Request()
-        #     planpath_request.waypoint = robot_move
-        #     planpath_request.angles = euler_output
-        #     future = self.waypoint_client.call_async(planpath_request)
+    
 
     def PID_control(self, ee_pose, prefix=None):
         if prefix == "L_":
@@ -633,11 +589,11 @@ class CvFrankaBridge(Node):
             output = self.max_output
 
         robot_move = PoseStamped()
-        robot_move.header.frame_id = f"{prefix}panda_link0"
+        robot_move.header.frame_id = "world"
         robot_move.header.stamp = self.get_clock().now().to_msg()
-        robot_move.pose.position.x = np.round(output * (desired_ee_pose.position.x - ee_pose.position.x),4)
-        robot_move.pose.position.y = np.round(-output * (desired_ee_pose.position.y - ee_pose.position.y),4)
-        robot_move.pose.position.z = np.round(-output * (desired_ee_pose.position.z - ee_pose.position.z),4)
+        robot_move.pose.position.x = np.round(output * (desired_ee_pose.position.x - ee_pose.position.x),4)*10
+        robot_move.pose.position.y = np.round(output * (desired_ee_pose.position.y - ee_pose.position.y),4)*10
+        robot_move.pose.position.z = np.round(output * (desired_ee_pose.position.z - ee_pose.position.z),4)*10
         #     robot_move.header.frame_id = "panda_link0"
         #     robot_move.header.stamp = self.get_clock().now().to_msg()
         #     robot_move_x = (self.desired_ee_pose.position.x - ee_pose.position.x)
@@ -651,20 +607,51 @@ class CvFrankaBridge(Node):
 
 
 
+
         # planpath_request = PlanPath.Request()
         # planpath_request.waypoint = robot_move
         # planpath_request.angles = euler_output
         # future = self.waypoint_client.call_async(planpath_request)
         if prefix == "L_":
+
             planpath_request = PlanPath.Request()
             planpath_request.waypoint = robot_move
             planpath_request.angles = euler_output
+            print("desired?",desired_ee_pose.position.x, desired_ee_pose.position.y, desired_ee_pose.position.z)
+            print("ee:",ee_pose.position.x, ee_pose.position.y, ee_pose.position.z)
+            current_pose = self.left_arm_api2_client.get_current_ee_pose().pose
+            print("current:",current_pose.position.x, current_pose.position.y, current_pose.position.z)
+            if self.position_reached(current_pose, desired_ee_pose, self.position_tolerance):
+                print("position reached")
+                twist = TwistStamped()
+                twist.header.frame_id = "world"
+                twist.header.stamp = self.get_clock().now().to_msg()
+                self.left_twist_pub.publish(twist)
+            else:
+                twist = TwistStamped()
+                twist.header.frame_id = "world"
+                twist.header.stamp = self.get_clock().now().to_msg()
+                twist.twist.linear.x = robot_move.pose.position.x
+                twist.twist.linear.y = robot_move.pose.position.y
+                twist.twist.linear.z = robot_move.pose.position.z
+                # twist.twist.angular.x = euler_output[0]
+                # twist.twist.angular.y = euler_output[1]
+                # twist.twist.angular.z = euler_output[2]
+                self.left_twist_pub.publish(twist)
+
             future = self.left_waypoint_client.call_async(planpath_request)
         elif prefix == "R_":
             planpath_request = PlanPath.Request()
             planpath_request.waypoint = robot_move
             planpath_request.angles = euler_output
             future = self.right_waypoint_client.call_async(planpath_request)
+
+    def position_reached(self, current_pose, desired_pose, position_threshold=0.01):
+        x_diff = abs(current_pose.position.x - desired_pose.position.x)
+        y_diff = abs(current_pose.position.y - desired_pose.position.y)
+        z_diff = abs(current_pose.position.z - desired_pose.position.z)
+        
+        return (x_diff < position_threshold[0] and y_diff < position_threshold[1] and z_diff < position_threshold[2])
 
 def main(args=None):
     rclpy.init(args=args)

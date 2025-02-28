@@ -6,6 +6,7 @@ from mediapipe.framework.formats import landmark_pb2
 import numpy as np
 import cv2
 import os
+import math
 
 from ament_index_python import get_package_share_directory
 
@@ -28,6 +29,8 @@ class MediaPipeRos:
         for idx in range(len(hand_landmarks_list)):
             hand_landmarks = hand_landmarks_list[idx]
             handedness = handedness_list[idx]
+
+            # rotation = self.calculate_hand_rotation(hand_landmarks)
 
             # Draw the hand landmarks.
             hand_landmarks_proto = landmark_pb2.NormalizedLandmarkList()
@@ -52,6 +55,9 @@ class MediaPipeRos:
             cv2.putText(annotated_image, f"{handedness[0].category_name}",
                         (text_x, text_y), cv2.FONT_HERSHEY_DUPLEX,
                         self.FONT_SIZE, self.HANDEDNESS_TEXT_COLOR, self.FONT_THICKNESS, cv2.LINE_AA)
+            # cv2.putText(annotated_image, f"Rotation: {rotation:.2f} degrees",
+            #               (text_x, text_y + 30), cv2.FONT_HERSHEY_DUPLEX,
+            #               self.FONT_SIZE, self.HANDEDNESS_TEXT_COLOR, self.FONT_THICKNESS, cv2.LINE_AA)
 
         return annotated_image
 
@@ -93,5 +99,17 @@ class MediaPipeRos:
 
         return recognizer
 
+    def calculate_hand_rotation(self, hand_landmarks):
+        # Get coordinates for wrist and middle finger MCP
+        wrist = np.array([hand_landmarks[0].x, hand_landmarks[0].y])
+        middle_mcp = np.array([hand_landmarks[9].x, hand_landmarks[9].y])
+        
+        # Calculate 2D rotation angle
+        direction = middle_mcp - wrist
+        angle_radians = math.atan2(direction[1], direction[0])
+        angle_degrees = math.degrees(angle_radians) + 90
+
+        return angle_degrees
+    
     def do_nothing(self):
         pass
