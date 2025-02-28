@@ -35,7 +35,7 @@ while True:
         break
 
     # Preprocess the frame
-    inputs = processor(images=frame, return_tensors="pt").to(device)
+    inputs = processor(images=frame, return_tensors="pt", use_fast=True).to(device)
 
     # Perform inference
     with torch.no_grad():
