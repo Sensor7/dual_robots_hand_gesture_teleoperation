@@ -42,7 +42,7 @@ import rclpy
 from rclpy.node import Node
 from rclpy.action import ActionClient
 from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
-
+from scipy.spatial.transform import Rotation as R
 import numpy as np
 
 class CvFrankaBridge(Node):
@@ -131,6 +131,7 @@ class CvFrankaBridge(Node):
 
         self.left_current_waypoint = None
         self.left_previous_waypoint = None
+        self.left_current_waypoint_quat = None
         self.left_offset = None
         self.left_initial_ee_pose = Pose(position=Point(x=0.30674, y=0.499969, z=0.590256),
                                         orientation=Quaternion(x=1.0, y=0.0, z=0.0, w=0.0))
@@ -142,6 +143,7 @@ class CvFrankaBridge(Node):
 
         self.right_current_waypoint = None
         self.right_previous_waypoint = None
+        self.right_current_waypoint_quat = None
         self.right_offset = None
         self.right_initial_ee_pose = Pose(position=Point(x=0.30674, y=-0.5, z=0.59),
                                         orientation=Quaternion(x=1.0, y=0.0, z=0.0, w=0.0))
@@ -161,7 +163,8 @@ class CvFrankaBridge(Node):
 
         self.lower_distance_threshold = 3.0
         self.upper_distance_threshold = 10.0
-        self.position_tolerance = [0.05, 0.05, 0.05]
+        self.position_tolerance = [0.05, 0.05, 0.05, 10]
+        self.angle_threshold = 5.0
 
         self.kp = 5.0
         self.ki = 0.0
@@ -268,15 +271,6 @@ class CvFrankaBridge(Node):
 
     def get_ee_pose(self, prefix= None):
         """Get the current pose of the end-effector."""
-        # ee_home_pos, ee_home_rot = self.get_transform(f"{prefix}panda_link0", f"{prefix}panda_hand")
-        # ee_pose = Pose()
-        # ee_pose.position.x = ee_home_pos.x
-        # ee_pose.position.y = ee_home_pos.y
-        # ee_pose.position.z = ee_home_pos.z
-        # ee_pose.orientation.x = ee_home_rot.x
-        # ee_pose.orientation.y = ee_home_rot.y
-        # ee_pose.orientation.z = ee_home_rot.z
-        # ee_pose.orientation.w = ee_home_rot.w
         if prefix == "L_":
             return self.left_arm_api2_client.get_current_ee_pose().pose
         elif prefix == "R_":
@@ -293,10 +287,17 @@ class CvFrankaBridge(Node):
 
         distance = np.linalg.norm(np.array([msg.pose.position.x, msg.pose.position.y, msg.pose.position.z]) -
                                   np.array([self.left_current_waypoint.position.x, self.left_current_waypoint.position.y, self.left_current_waypoint.position.z]))
+        
+        r = R.from_quat([msg.pose.orientation.x, msg.pose.orientation.y, msg.pose.orientation.z, msg.pose.orientation.w])
+        r2 = R.from_quat([self.left_current_waypoint.orientation.x, self.left_current_waypoint.orientation.y, self.left_current_waypoint.orientation.z, self.left_current_waypoint.orientation.w])
+        euler = r.as_euler('xyz', degrees=True)
+        euler2 = r2.as_euler('xyz', degrees=True)
+
+        angle_distance = np.linalg.norm(np.array(euler) - np.array(euler2))
 
         # filter out tiny movements to reduce jitter, and large errors from 
         # camera
-        if distance < self.lower_distance_threshold and distance > self.upper_distance_threshold:
+        if distance < self.lower_distance_threshold and distance > self.upper_distance_threshold and angle_distance < self.angle_threshold:
             # experimental, might help with jerkiness when the use moves their hand too fast
             self.left_offset = self.left_current_waypoint
             return
@@ -314,9 +315,16 @@ class CvFrankaBridge(Node):
         distance = np.linalg.norm(np.array([msg.pose.position.x, msg.pose.position.y, msg.pose.position.z]) -
                                   np.array([self.right_current_waypoint.position.x, self.right_current_waypoint.position.y, self.right_current_waypoint.position.z]))
 
+        r = R.from_quat([msg.pose.orientation.x, msg.pose.orientation.y, msg.pose.orientation.z, msg.pose.orientation.w])
+        r2 = R.from_quat([self.right_current_waypoint.orientation.x, self.right_current_waypoint.orientation.y, self.right_current_waypoint.orientation.z, self.right_current_waypoint.orientation.w])
+        euler = r.as_euler('xyz', degrees=True)
+        euler2 = r2.as_euler('xyz', degrees=True)
+
+        angle_distance = np.linalg.norm(np.array(euler) - np.array(euler2))
+
         # filter out tiny movements to reduce jitter, and large errors from 
         # camera
-        if distance < self.lower_distance_threshold and distance > self.upper_distance_threshold:
+        if distance < self.lower_distance_threshold and distance > self.upper_distance_threshold and angle_distance < self.angle_threshold:
             # experimental, might help with jerkiness when the use moves their hand too fast
             self.right_offset = self.right_current_waypoint
             return
@@ -530,8 +538,8 @@ class CvFrankaBridge(Node):
         
         if (self.right_desired_ee_pose.position.x < self.x_limits[0] or self.right_desired_ee_pose.position.x > self.x_limits[1]):
             self.right_desired_ee_pose.position.x = self.x_limits[0] if self.right_desired_ee_pose.position.x < self.x_limits[0] else self.x_limits[1]
-        if (self.right_desired_ee_pose.position.y < self.y_limits[0] or self.right_desired_ee_pose.position.y > self.y_limits[1]):
-            self.right_desired_ee_pose.position.y = self.y_limits[0] if self.right_desired_ee_pose.position.y < self.y_limits[0] else self.y_limits[1]
+        if (self.right_desired_ee_pose.position.y < self.right_y_limits[0] or self.right_desired_ee_pose.position.y > self.right_y_limits[1]):
+            self.right_desired_ee_pose.position.y = self.right_y_limits[0] if self.right_desired_ee_pose.position.y < self.right_y_limits[0] else self.right_y_limits[1]
         if (self.right_desired_ee_pose.position.z < self.z_limits[0] or self.right_desired_ee_pose.position.z > self.z_limits[1]):
             self.right_desired_ee_pose.position.z = self.z_limits[0] if self.right_desired_ee_pose.position.z < self.z_limits[0] else self.z_limits[1]
 
@@ -617,12 +625,9 @@ class CvFrankaBridge(Node):
             planpath_request = PlanPath.Request()
             planpath_request.waypoint = robot_move
             planpath_request.angles = euler_output
-            print("desired?",desired_ee_pose.position.x, desired_ee_pose.position.y, desired_ee_pose.position.z)
-            print("ee:",ee_pose.position.x, ee_pose.position.y, ee_pose.position.z)
             current_pose = self.left_arm_api2_client.get_current_ee_pose().pose
-            print("current:",current_pose.position.x, current_pose.position.y, current_pose.position.z)
             if self.position_reached(current_pose, desired_ee_pose, self.position_tolerance):
-                print("position reached")
+                print("left_position reached")
                 twist = TwistStamped()
                 twist.header.frame_id = "world"
                 twist.header.stamp = self.get_clock().now().to_msg()
@@ -634,24 +639,57 @@ class CvFrankaBridge(Node):
                 twist.twist.linear.x = robot_move.pose.position.x
                 twist.twist.linear.y = robot_move.pose.position.y
                 twist.twist.linear.z = robot_move.pose.position.z
-                # twist.twist.angular.x = euler_output[0]
-                # twist.twist.angular.y = euler_output[1]
-                # twist.twist.angular.z = euler_output[2]
+                if self.left_current_waypoint is not None:
+                    quat = [self.left_current_waypoint.orientation.x, self.left_current_waypoint.orientation.y, self.left_current_waypoint.orientation.z, self.left_current_waypoint.orientation.w]
+                    r = R.from_quat(quat)
+                    euler = r.as_euler('xyz', degrees=True)
+                    twist.twist.angular.x = - euler[0]/40
+                    twist.twist.angular.y = euler[1]
+                    twist.twist.angular.z = euler[2]
                 self.left_twist_pub.publish(twist)
 
-            future = self.left_waypoint_client.call_async(planpath_request)
         elif prefix == "R_":
             planpath_request = PlanPath.Request()
             planpath_request.waypoint = robot_move
             planpath_request.angles = euler_output
-            future = self.right_waypoint_client.call_async(planpath_request)
+            current_pose = self.right_arm_api2_client.get_current_ee_pose().pose
+            print("current_pose", current_pose)
+            print("desired_ee_pose", desired_ee_pose)
+            if self.position_reached(current_pose, desired_ee_pose, self.position_tolerance):
+                print("right_position reached")
+                twist = TwistStamped()
+                twist.header.frame_id = "world"
+                twist.header.stamp = self.get_clock().now().to_msg()
+                self.right_twist_pub.publish(twist)
+            else:
+                twist = TwistStamped()
+                twist.header.frame_id = "world"
+                twist.header.stamp = self.get_clock().now().to_msg()
+                twist.twist.linear.x = robot_move.pose.position.x
+                twist.twist.linear.y = robot_move.pose.position.y
+                twist.twist.linear.z = robot_move.pose.position.z
+                if self.right_current_waypoint is not None:
+                    quat = [self.right_current_waypoint.orientation.x, self.right_current_waypoint.orientation.y, self.right_current_waypoint.orientation.z, self.right_current_waypoint.orientation.w]
+                    r = R.from_quat(quat)
+                    euler = r.as_euler('xyz', degrees=True)
+                    twist.twist.angular.x = - euler[0]/40
+                    twist.twist.angular.y = euler[1]
+                    twist.twist.angular.z = euler[2]
+                self.right_twist_pub.publish(twist)
 
     def position_reached(self, current_pose, desired_pose, position_threshold=0.01):
         x_diff = abs(current_pose.position.x - desired_pose.position.x)
         y_diff = abs(current_pose.position.y - desired_pose.position.y)
         z_diff = abs(current_pose.position.z - desired_pose.position.z)
+        current_quat = [current_pose.orientation.x, current_pose.orientation.y, current_pose.orientation.z, current_pose.orientation.w]
+        desired_quat = [desired_pose.orientation.x, desired_pose.orientation.y, desired_pose.orientation.z, desired_pose.orientation.w]
+
+        current_rot = R.from_quat(current_quat).as_euler('xyz', degrees=True)[0]  # Extract roll (X-axis rotation)
+        desired_rot = R.from_quat(desired_quat).as_euler('xyz', degrees=True)[0]  # 
         
-        return (x_diff < position_threshold[0] and y_diff < position_threshold[1] and z_diff < position_threshold[2])
+        rot_diff = abs(current_rot - desired_rot)
+        
+        return (x_diff < position_threshold[0] and y_diff < position_threshold[1] and z_diff < position_threshold[2] and rot_diff < position_threshold[3])
 
 def main(args=None):
     rclpy.init(args=args)

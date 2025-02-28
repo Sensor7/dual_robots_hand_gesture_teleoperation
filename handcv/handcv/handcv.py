@@ -232,7 +232,7 @@ class HandCV(Node):
         self.right_waypoint.pose.position.x = self.right_centroid[0]
         self.right_waypoint.pose.position.y = self.right_centroid[1]
         self.right_waypoint.pose.position.z = self.right_centroid[2]
-        r = R.from_euler('x', self.right_rotation)
+        r = R.from_euler('x', self.right_rotation, degrees=True)
         quat = r.as_quat()
         self.right_waypoint.pose.orientation.x = quat[0]
         self.right_waypoint.pose.orientation.y = quat[1]
@@ -242,7 +242,7 @@ class HandCV(Node):
         self.left_waypoint.pose.position.x = self.left_centroid[0]
         self.left_waypoint.pose.position.y = self.left_centroid[1]
         self.left_waypoint.pose.position.z = self.left_centroid[2]
-        r = R.from_euler('x', self.left_rotation)
+        r = R.from_euler('x', self.left_rotation, degrees=True)
         quat = r.as_quat()
         self.left_waypoint.pose.orientation.x = quat[0]
         self.left_waypoint.pose.orientation.y = quat[1]
