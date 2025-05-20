@@ -1,6 +1,6 @@
 # dual_panda_teleoperation
 
-This repository aims at Sereact coding challenge. And it implemented dual pandas robot teleoperated by human hand movements and gestures. You can use RGB camera to control the robot.
+This repository implemented dual pandas robot teleoperated by human hand movements and gestures. You can use RGB camera to control the robot.
 
 - Thumb up: activate servo and start teleoperation
 
